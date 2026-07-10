@@ -1,5 +1,111 @@
 // content.js — injected into every zillow.com page
 
+// ── Auto-CAPTCHA detection and button clicking ─────────────────────────────
+// Attempt to automatically click verification buttons when CAPTCHA/bot blocks detected
+function autoClickCaptchaButton() {
+  // Common button text patterns for verification/CAPTCHA bypass
+  const buttonPatterns = [
+    /verify|press.*hold|complete.*check|human.*verification|captcha|challenge/i,
+    /let me through|i am human|proceed|continue/i,
+    /access.*allow|grant.*access/i,
+  ];
+
+  // Search for clickable elements (buttons, links, etc.)
+  const clickables = document.querySelectorAll('button, input[type="button"], input[type="submit"], a, [role="button"]');
+  
+  for (const el of clickables) {
+    const text = (el.innerText || el.value || el.textContent || "").toLowerCase();
+    const ariaLabel = (el.getAttribute('aria-label') || "").toLowerCase();
+    const title = (el.getAttribute('title') || "").toLowerCase();
+    const fullText = `${text} ${ariaLabel} ${title}`;
+
+    // Check if button matches CAPTCHA patterns
+    for (const pattern of buttonPatterns) {
+      if (pattern.test(fullText)) {
+        console.log("[Xpiper] Auto-clicking CAPTCHA button:", el.innerText || el.value);
+        el.click();
+        return true;
+      }
+    }
+  }
+
+  // Also check for common Cloudflare/Akamai challenge buttons
+  const challengeButtons = document.querySelectorAll(
+    'input[value="Verify"],' +
+    'input[value="Please Wait..."],' +
+    'button[id*="challenge"],' +
+    '[id*="button-verify"],' +
+    '[class*="verify-btn"],' +
+    '[class*="challenge-btn"]'
+  );
+  
+  for (const btn of challengeButtons) {
+    if (btn.offsetHeight > 0 && btn.offsetWidth > 0) { // Visible check
+      console.log("[Xpiper] Auto-clicking challenge button:", btn.innerText || btn.value);
+      btn.click();
+      return true;
+    }
+  }
+
+  // Check for checkbox-style verification (e.g., reCAPTCHA)
+  const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+  for (const checkbox of checkboxes) {
+    const label = checkbox.closest('label') || checkbox.parentElement;
+    const labelText = (label?.innerText || "").toLowerCase();
+    if (labelText.includes('verify') || labelText.includes('human') || labelText.includes('robot')) {
+      if (!checkbox.checked) {
+        console.log("[Xpiper] Auto-clicking verification checkbox");
+        checkbox.click();
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// Periodically check for and click CAPTCHA buttons when on a blocked page
+let captchaCheckInterval = null;
+
+function startCaptchaAutoClick() {
+  if (captchaCheckInterval) return; // Already running
+  
+  captchaCheckInterval = setInterval(() => {
+    if (isBlockPage()) {
+      autoClickCaptchaButton();
+    }
+  }, 1500); // Check every 1.5 seconds
+
+  console.log("[Xpiper] CAPTCHA auto-click monitor started");
+}
+
+function stopCaptchaAutoClick() {
+  if (captchaCheckInterval) {
+    clearInterval(captchaCheckInterval);
+    captchaCheckInterval = null;
+    console.log("[Xpiper] CAPTCHA auto-click monitor stopped");
+  }
+}
+
+// Start monitoring when page loads
+if (isBlockPage()) {
+  startCaptchaAutoClick();
+}
+
+// Re-check on DOM changes in case of deferred CAPTCHA loading
+const observer = new MutationObserver(() => {
+  if (isBlockPage() && !captchaCheckInterval) {
+    startCaptchaAutoClick();
+  }
+});
+
+observer.observe(document.body, {
+  childList: true,
+  subtree: true,
+  characterData: false,
+  attributes: false,
+});
+
 // ── Listen for messages from background ──────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "extractLinks") {
@@ -284,7 +390,7 @@ function extractForSaleCount(md) {
 // ── Shared address helpers ────────────────────────────────────────────────
 
 // Street address regex — digits then 1-3 words then a recognised street type.
-const ADDRESS_PATTERN = /\b\d{1,5}\s+(?:[A-Za-z0-9'][A-Za-z0-9'\s]{0,40}?)(?:Avenue|Ave|Street|St|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir|Trail|Trl|Way|Place|Pl|Terrace|Ter|Highway|Hwy|Parkway|Pkwy|Square|Sq)\b/i;
+const ADDRESS_PATTERN = /\b\d{1,5}\s+(?:[A-Za-z0-9'][A-Za-z0-9'\s]{0,40}?)(?:Avenue|Ave|Street|St|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Court|Ct|Circle|Cir|Trail|Trl|Way|Place|Pl|Terrace|Ter|Hi[...]
 
 // Noise tokens that can appear before the real house number
 // e.g. "3 bds 2 ba 1,200 sqft 1010 S Ocean Blvd"
@@ -335,9 +441,9 @@ function _sanitize(str) {
   if (!/\b(?:avenue|ave|street|st|road|rd|boulevard|blvd|lane|ln|drive|dr|court|ct|circle|cir|trail|trl|way|place|pl|terrace|ter|highway|hwy|parkway|pkwy|square|sq)\b/i.test(clean)) return null;
   // Reject if address-like but contains common non-address phrases
   const badPhrases = ["past", "last year", "sold in", "sold on", "in the past", 
-                      "middle river", "middle creek", "middle branch", "team reviews",
-                      "sales last", "reviews", "332 team", "0 332", "bd1 ba",
-                      "ba700", "bd2", "bd1", "sqft"];
+                       "middle river", "middle creek", "middle branch", "team reviews",
+                       "sales last", "reviews", "332 team", "0 332", "bd1 ba",
+                       "ba700", "bd2", "bd1", "sqft"];
   for (const phrase of badPhrases) {
     if (lower.includes(phrase)) return null;
   }
