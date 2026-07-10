@@ -5,7 +5,7 @@
 function autoClickCaptchaButton() {
   // Common button text patterns for verification/CAPTCHA bypass
   const buttonPatterns = [
-    /verify|press.*hold|complete.*check|human.*verification|captcha|challenge/i,
+    /verify|complete.*check|human.*verification|captcha|challenge/i,
     /let me through|i am human|proceed|continue/i,
     /access.*allow|grant.*access/i,
   ];
@@ -26,6 +26,39 @@ function autoClickCaptchaButton() {
         el.click();
         return true;
       }
+    }
+  }
+
+  // ── SPECIAL: Handle "Press & Hold" buttons ─────────────────────────────
+  // These require simulating a mousedown + hold + mouseup sequence
+  const pressHoldButtons = document.querySelectorAll('button');
+  for (const btn of pressHoldButtons) {
+    const text = (btn.innerText || btn.textContent || "").toLowerCase();
+    if (text.includes("press") && text.includes("hold")) {
+      console.log("[Xpiper] Detected 'Press & Hold' button, simulating hold...");
+      
+      // Simulate a hold action (mousedown + wait + mouseup)
+      const mouseDownEvent = new MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      const mouseUpEvent = new MouseEvent('mouseup', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      
+      btn.dispatchEvent(mouseDownEvent);
+      console.log("[Xpiper] mousedown sent");
+      
+      // Hold for 2 seconds (simulating user hold time)
+      setTimeout(() => {
+        btn.dispatchEvent(mouseUpEvent);
+        console.log("[Xpiper] mouseup sent - Press & Hold should be complete");
+      }, 2000);
+      
+      return true;
     }
   }
 
